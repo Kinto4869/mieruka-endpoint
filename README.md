@@ -18,9 +18,22 @@ curl -i "${BASE_URL:-http://localhost:8788}/mesures" \
   -d '{"adaptateur_id":"NABD-0003","horodatage":"2026-11-22T12:00:00Z","watts":110.4,"source":"simulee"}'
 ```
 
-HTTP 200 and `{"acquittees":1}` acknowledge durable storage. Retry the same payload after a timeout. A repeated adapter ID and timestamp keeps the first reading and is acknowledged again. Invalid batches return HTTP 400 atomically. IDs use NABD plus a hyphen and four digits. Watts must be finite and nonnegative. Supply an ISO timestamp with a timezone and source `simulee` or `reelle`.
+### Wire format
 
-Authenticated `GET /readings` returns the latest sample for each adapter. Public `GET /health` returns service status.
+| Field | Type | Meaning |
+|---|---|---|
+| `adaptateur_id` | string | `NABD-` followed by exactly four digits, such as `NABD-0003`. |
+| `horodatage` | string | Measurement time in ISO 8601 with a timezone, such as `2026-11-22T13:00:00+01:00`. Reads return UTC with milliseconds. |
+| `watts` | number | Instantaneous power in watts. Use a finite nonnegative JSON number, including decimals. |
+| `source` | string | `simulee` for the simulator or `reelle` for real measurements. |
+
+Use these exact French field names and values. The receiver stores and returns these four fields. Extra input fields such as `country`, latitude, longitude, and altitude are ignored.
+
+- `POST /mesures` returns HTTP 200 and `{"acquittees":1}` for a single accepted reading. The count includes duplicates. After a timeout, retry the exact same reading or batch. An adapter ID and UTC-normalized timestamp identify one reading. The first value wins. Invalid batches return HTTP 400 before any rows are written.
+- `GET /readings` uses the same bearer token. It returns an array with the latest reading by measurement time for each adapter, sorted by adapter ID. An empty database returns `[]`. Consumers pull this data over HTTP. The service has no automatic forwarding, webhook, or live stream.
+- `GET /health` is public and returns `{"ok":true}`.
+
+Use [openapi.json](openapi.json) as the machine-readable API contract when generating a client.
 
 ### Railway
 

@@ -1,0 +1,275 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "Mieruka telemetry receiver",
+    "version": "1.0.0",
+    "description": "The simulator pushes measurements. Consumers poll the receiver for the latest reading per adapter."
+  },
+  "security": [
+    {
+      "bearerAuth": []
+    }
+  ],
+  "paths": {
+    "/mesures": {
+      "post": {
+        "operationId": "ingestReadings",
+        "summary": "Store one reading or a batch",
+        "description": "Requests are limited to 64 KiB. The entire batch is validated before storage. The first reading for each adapter and normalized timestamp wins. Retried readings count toward the acknowledgement.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "oneOf": [
+                  {
+                    "$ref": "#/components/schemas/Reading"
+                  },
+                  {
+                    "type": "array",
+                    "items": {
+                      "$ref": "#/components/schemas/Reading"
+                    },
+                    "minItems": 1,
+                    "maxItems": 100
+                  }
+                ]
+              },
+              "examples": {
+                "single": {
+                  "value": {
+                    "adaptateur_id": "NABD-0003",
+                    "horodatage": "2026-11-22T12:00:00Z",
+                    "watts": 110.4,
+                    "source": "simulee"
+                  }
+                },
+                "batch": {
+                  "value": [
+                    {
+                      "adaptateur_id": "NABD-0003",
+                      "horodatage": "2026-11-22T12:00:00Z",
+                      "watts": 110.4,
+                      "source": "simulee"
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Number of readings acknowledged, including duplicates.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "acquittees"
+                  ],
+                  "properties": {
+                    "acquittees": {
+                      "type": "integer",
+                      "minimum": 1,
+                      "maximum": 100
+                    }
+                  }
+                },
+                "example": {
+                  "acquittees": 1
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid JSON, batch size or reading fields.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Bearer token missing or incorrect.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "Body exceeds 64 KiB.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "415": {
+            "description": "Expected application/json.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Storage operation failed.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/readings": {
+      "get": {
+        "operationId": "listLatestReadings",
+        "summary": "Get the latest measurement per adapter",
+        "description": "Returns an array sorted by adapter ID. Latest is determined by measurement time. Returns an empty array before any data has been received.",
+        "responses": {
+          "200": {
+            "description": "Latest readings.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/Reading"
+                  }
+                },
+                "example": [
+                  {
+                    "adaptateur_id": "NABD-0003",
+                    "horodatage": "2026-11-22T12:00:00.000Z",
+                    "watts": 110.4,
+                    "source": "simulee"
+                  }
+                ]
+              }
+            }
+          },
+          "401": {
+            "description": "Bearer token missing or incorrect.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Storage operation failed.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/health": {
+      "get": {
+        "operationId": "getHealth",
+        "summary": "Check service availability",
+        "security": [],
+        "responses": {
+          "200": {
+            "description": "Service is up.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "ok"
+                  ],
+                  "properties": {
+                    "ok": {
+                      "const": true
+                    }
+                  }
+                },
+                "example": {
+                  "ok": true
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "securitySchemes": {
+      "bearerAuth": {
+        "type": "http",
+        "scheme": "bearer"
+      }
+    },
+    "schemas": {
+      "Reading": {
+        "type": "object",
+        "required": [
+          "adaptateur_id",
+          "horodatage",
+          "watts",
+          "source"
+        ],
+        "properties": {
+          "adaptateur_id": {
+            "type": "string",
+            "pattern": "^NABD-\\d{4}$",
+            "description": "Adapter identifier."
+          },
+          "horodatage": {
+            "type": "string",
+            "format": "date-time",
+            "description": "Measurement time. Send UTC or an explicit offset. The receiver returns UTC with millisecond precision."
+          },
+          "watts": {
+            "type": "number",
+            "minimum": 0,
+            "description": "Instantaneous power in watts. Decimal values are accepted."
+          },
+          "source": {
+            "type": "string",
+            "enum": [
+              "simulee",
+              "reelle"
+            ],
+            "description": "simulee for simulator data or reelle for real measurements."
+          }
+        },
+        "description": "Only these four fields are stored and returned. Extra input fields, including country and GPS coordinates, are ignored."
+      },
+      "Error": {
+        "type": "object",
+        "required": [
+          "error"
+        ],
+        "properties": {
+          "error": {
+            "type": "string"
+          }
+        }
+      }
+    }
+  }
+}
