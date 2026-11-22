@@ -1,21 +1,34 @@
 # Mieruka telemetry receiver
 
-The simulator posts measurements to this standalone Node service. SQLite stores the history. Start it locally with Node 22.13 or later.
+The simulator posts measurements to this standalone Node service. SQLite stores the history.
+
+### Send a test reading to Railway
+
+Set `API_TOKEN` in your terminal or simulator backend to the token configured for the Railway service. Send one JSON reading or a batch of 1–100 readings.
+
+```sh
+BASE_URL="https://mieruka-endpoint-production.up.railway.app"
+
+curl -fsS "$BASE_URL/health"
+
+curl -fsS "$BASE_URL/mesures" \
+  -H "Authorization: Bearer $API_TOKEN" \
+  -H 'Content-Type: application/json' \
+  -d "{\"adaptateur_id\":\"NABD-0001\",\"horodatage\":\"$(date -u +%Y-%m-%dT%H:%M:%SZ)\",\"watts\":110.4,\"source\":\"simulee\"}"
+
+curl -fsS "$BASE_URL/readings" \
+  -H "Authorization: Bearer $API_TOKEN"
+```
+
+The health check returns `{"ok":true}`. The POST acknowledges the reading with `{"acquittees":1}`. The final GET returns the latest reading for each adapter.
+
+### Local development
+
+Use Node 22.13 or later. Start the receiver locally, then use `http://localhost:8788` as `BASE_URL` with your local token.
 
 ```sh
 export API_TOKEN="$(openssl rand -hex 32)"
 npm start
-```
-
-### Simulator integration
-
-Send one reading or an array of 1–100 readings with the same headers. Keep the token in the simulator backend environment. Replace the sample timestamp with the measurement time.
-
-```sh
-curl -i "${BASE_URL:-http://localhost:8788}/mesures" \
-  -H "Authorization: Bearer $API_TOKEN" \
-  -H 'Content-Type: application/json' \
-  -d '{"adaptateur_id":"NABD-0003","horodatage":"2026-11-22T12:00:00Z","watts":110.4,"source":"simulee"}'
 ```
 
 ### Wire format

@@ -5,6 +5,12 @@
     "version": "1.0.0",
     "description": "The simulator pushes measurements. Consumers poll the receiver for the latest reading per adapter."
   },
+  "servers": [
+    {
+      "url": "https://mieruka-endpoint-production.up.railway.app",
+      "description": "Production receiver"
+    }
+  ],
   "security": [
     {
       "bearerAuth": []
