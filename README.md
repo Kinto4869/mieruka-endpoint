@@ -30,7 +30,7 @@ curl -i "${BASE_URL:-http://localhost:8788}/mesures" \
 Use these exact French field names and values. The receiver stores and returns these four fields. Extra input fields such as `country`, latitude, longitude, and altitude are ignored.
 
 - `POST /mesures` returns HTTP 200 and `{"acquittees":1}` for a single accepted reading. The count includes duplicates. After a timeout, retry the exact same reading or batch. An adapter ID and UTC-normalized timestamp identify one reading. The first value wins. Invalid batches return HTTP 400 before any rows are written.
-- `GET /readings` uses the same bearer token. It returns an array with the latest reading by measurement time for each adapter, sorted by adapter ID. An empty database returns `[]`. Consumers pull this data over HTTP. The service has no automatic forwarding, webhook, or live stream.
+- `GET /readings` uses the same bearer token. It returns an array with the latest reading by measurement time for each adapter, sorted by adapter ID. An empty database returns `[]`. Consumers pull this data over HTTP. Automatic forwarding to Django is available when configured below.
 - `GET /health` is public and returns `{"ok":true}`.
 
 Use [openapi.json](openapi.json) as the machine-readable API contract when generating a client.
@@ -38,3 +38,9 @@ Use [openapi.json](openapi.json) as the machine-readable API contract when gener
 ### Railway
 
 Deploy this repository as one Dockerfile service. Set a strong secret in the API_TOKEN service variable, attach a volume mounted at /data and generate a public HTTPS domain. Configure /health as the health check. Give the simulator operator the domain and the token through a private channel. Use one replica for the SQLite volume. Railway supplies PORT. [Volumes](https://docs.railway.com/volumes) · [Public networking](https://docs.railway.com/networking/public-networking)
+
+### Forward new readings to Django
+
+Set `FORWARD_URL=https://kizuna-temp.vercel.app/mesures` in Railway and set the same `MIERUKA_RELAY_TOKEN` secret in Railway and Vercel. Use a separate secret from the simulator's `API_TOKEN`. Deploy the Django version that supports the relay token and apply the measurement migration to its production database before enabling forwarding.
+
+With forwarding enabled, Railway stores each new reading and queues it for Django in the same transaction. Acknowledgement to the simulator means the reading is stored on Railway. Delivery to Django retries with backoff until Django acknowledges the batch. Use a persistent Railway volume at `/data` to retain pending deliveries. Forwarding applies to readings first stored after configuration.

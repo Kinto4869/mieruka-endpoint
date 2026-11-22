@@ -13,6 +13,53 @@ db.exec(`PRAGMA journal_mode=WAL;
     adaptateur_id TEXT NOT NULL, horodatage TEXT NOT NULL, watts REAL NOT NULL, source TEXT NOT NULL,
     PRIMARY KEY (adaptateur_id, horodatage)
   )`);
+const forwardUrl = process.env.FORWARD_URL;
+const forwardToken = process.env.MIERUKA_RELAY_TOKEN;
+if (forwardUrl && (!forwardToken || new URL(forwardUrl).protocol !== 'https:')) {
+  throw new Error('Forwarding requires an HTTPS FORWARD_URL and MIERUKA_RELAY_TOKEN.');
+}
+db.exec(`CREATE TABLE IF NOT EXISTS outbox (
+  id INTEGER PRIMARY KEY, adaptateur_id TEXT NOT NULL, horodatage TEXT NOT NULL,
+  watts REAL NOT NULL, source TEXT NOT NULL
+)`);
+const enqueue = db.prepare('INSERT INTO outbox (adaptateur_id, horodatage, watts, source) VALUES (?,?,?,?)');
+const pending = db.prepare('SELECT * FROM outbox ORDER BY id LIMIT 100');
+const delivered = db.prepare('DELETE FROM outbox WHERE id <= ?');
+let sending = false;
+let retryAt = 0;
+let failures = 0;
+
+async function forwardReadings() {
+  if (!forwardUrl || sending || Date.now() < retryAt) return;
+  sending = true;
+  try {
+    let batch;
+    while ((batch = pending.all()).length) {
+      const payload = batch.map(({id, ...reading}) => reading);
+      const response = await fetch(forwardUrl, {
+        method: 'POST',
+        headers: {'Content-Type':'application/json', Authorization:'Bearer '+forwardToken},
+        body: JSON.stringify(payload),
+        redirect: 'error',
+        signal: AbortSignal.timeout(10000),
+      });
+      if (!response.ok) {
+        await response.body?.cancel();
+        throw new Error('HTTP '+response.status);
+      }
+      if ((await response.json()).acquittees !== payload.length) throw new Error('Incomplete acknowledgement');
+      delivered.run(batch.at(-1).id);
+      failures = 0;
+    }
+  } catch (error) {
+    console.error('Forwarding failed:', error.message);
+    retryAt = Date.now() + Math.min(60000, 1000 * 2 ** Math.min(++failures, 6));
+  } finally {
+    sending = false;
+  }
+}
+if (forwardUrl) setInterval(forwardReadings, 1000);
+
 const insert = db.prepare('INSERT INTO readings VALUES (?,?,?,?) ON CONFLICT DO NOTHING');
 const latest = db.prepare(`SELECT * FROM readings AS r WHERE horodatage =
   (SELECT MAX(horodatage) FROM readings WHERE adaptateur_id=r.adaptateur_id) ORDER BY adaptateur_id`);
@@ -57,13 +104,16 @@ createServer(async (req,res) => {
     const rows = await readBatch(req);
     db.exec('BEGIN');
     try {
-      for (const row of rows) insert.run(...row);
+      for (const row of rows) {
+        if (insert.run(...row).changes && forwardUrl) enqueue.run(...row);
+      }
       db.exec('COMMIT');
     } catch (error) {
       db.exec('ROLLBACK');
       throw error;
     }
     send(200,{acquittees:rows.length});
+    void forwardReadings();
   } catch (error) {
     send(error.status ?? 500,{error:error.status ? error.message : 'Storage error'});
   }
