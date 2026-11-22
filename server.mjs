@@ -15,9 +15,13 @@ db.exec(`PRAGMA journal_mode=WAL;
   )`);
 const forwardUrl = process.env.FORWARD_URL;
 const forwardToken = process.env.MIERUKA_RELAY_TOKEN;
-if (forwardUrl && (!forwardToken || new URL(forwardUrl).protocol !== 'https:')) {
-  throw new Error('Forwarding requires an HTTPS FORWARD_URL and MIERUKA_RELAY_TOKEN.');
+const adapterKey = process.env.MIERUKA_ADAPTER_KEY;
+if (forwardUrl && new URL(forwardUrl).protocol !== 'https:') {
+  throw new Error('FORWARD_URL must use HTTPS.');
 }
+const forwardHeaders = {'Content-Type':'application/json'};
+if (adapterKey) forwardHeaders['X-Adapter-Key'] = adapterKey;
+else if (forwardToken) forwardHeaders.Authorization = 'Bearer '+forwardToken;
 db.exec(`CREATE TABLE IF NOT EXISTS outbox (
   id INTEGER PRIMARY KEY, adaptateur_id TEXT NOT NULL, horodatage TEXT NOT NULL,
   watts REAL NOT NULL, source TEXT NOT NULL
@@ -38,7 +42,7 @@ async function forwardReadings() {
       const payload = batch.map(({id, ...reading}) => reading);
       const response = await fetch(forwardUrl, {
         method: 'POST',
-        headers: {'Content-Type':'application/json', Authorization:'Bearer '+forwardToken},
+        headers: forwardHeaders,
         body: JSON.stringify(payload),
         redirect: 'error',
         signal: AbortSignal.timeout(10000),

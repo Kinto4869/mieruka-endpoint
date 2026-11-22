@@ -41,6 +41,8 @@ Deploy this repository as one Dockerfile service. Set a strong secret in the API
 
 ### Forward new readings to Django
 
-Set `FORWARD_URL=https://kizuna-temp.vercel.app/mesures` in Railway and set the same `MIERUKA_RELAY_TOKEN` secret in Railway and Vercel. Use a separate secret from the simulator's `API_TOKEN`. Deploy the Django version that supports the relay token and apply the measurement migration to its production database before enabling forwarding.
+Set `FORWARD_URL=https://kizuna-temp.vercel.app/api/mesures` in Railway. If the Vercel app has `MIERUKA_ADAPTER_KEY` configured, set that same secret in Railway. The receiver sends it as `X-Adapter-Key`. The simulator still uses Railway’s `API_TOKEN` to post to `/mesures`.
+
+The Vercel intake accepts registered adapter IDs and power from 0 to 10,000 W. Test with a registered adapter such as `NABD-0001` and a current timestamp. The Railway acknowledgement confirms the local write. Check the Railway deploy logs for forwarding errors.
 
 With forwarding enabled, Railway stores each new reading and queues it for Django in the same transaction. Acknowledgement to the simulator means the reading is stored on Railway. Delivery to Django retries with backoff until Django acknowledges the batch. Use a persistent Railway volume at `/data` to retain pending deliveries. Forwarding applies to readings first stored after configuration.
