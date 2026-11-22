@@ -1,0 +1,7 @@
+{
+  "name": "mieruka-endpoint",
+  "version": "1.0.0",
+  "private": true,
+  "engines": {"node": ">=22.13.0"},
+  "scripts": {"start": "node server.mjs"}
+}
